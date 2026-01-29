@@ -1,4 +1,4 @@
-// Dear ImGui: standalone example application for Windows API + DirectX 11
+﻿// Dear ImGui: standalone example application for Windows API + DirectX 11
 
 // Learn about Dear ImGui:
 // - FAQ                  https://dearimgui.com/faq
@@ -11,6 +11,8 @@
 #include "imgui_impl_dx11.h"
 #include <d3d11.h>
 #include <tchar.h>
+#include <string>
+#include <vector>
 
 // Data
 static ID3D11Device*            g_pd3dDevice = nullptr;
@@ -89,10 +91,23 @@ int main(int, char**)
     //ImFont* font = io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\ArialUni.ttf");
     //IM_ASSERT(font != nullptr);
 
-    // Our state
-    bool show_demo_window = true;
-    bool show_another_window = false;
-    ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
+    ImVec4 clear_color = ImVec4(0.1f, 0.1f, 0.1f, 1.0f);
+
+    // chat channel
+    static int current_room = 0;
+
+    static const char* room_names[] = {
+        "General",
+        "Game",
+        "Study",
+        "Random"
+    };
+
+    // each room chat history
+    static std::vector<std::string> chat_history[4];
+
+    // if we need to scroll to bottom
+    static bool scroll_to_bottom = false;
 
     // Main loop
     bool done = false;
@@ -133,42 +148,133 @@ int main(int, char**)
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
 
-        // 1. Show the big demo window (Most of the sample code is in ImGui::ShowDemoWindow()! You can browse its code to learn more about Dear ImGui!).
-        if (show_demo_window)
-            ImGui::ShowDemoWindow(&show_demo_window);
+        static char chat_input[256] = "";
+        static bool focus_input_next_frame = false;
 
-        // 2. Show a simple window that we create ourselves. We use a Begin/End pair to create a named window.
+        //--------------start area-----------------
+        //-----------------------------------------
+
+        // main window
+        ImGui::SetNextWindowSize(ImVec2(560, 440), ImGuiCond_FirstUseEver);
+        ImGui::Begin("Chatroom");
+
+        // get available region size
+        ImVec2 avail = ImGui::GetContentRegionAvail();
+        float left_width = 220.0f; // left panel width
+
+        // left panel: chat room list
+        ImGui::BeginChild("LeftPanel", ImVec2(left_width, avail.y), true);
+
+        ImGui::Text("Chat Rooms");
+        ImGui::Separator();
+
+        for (int i = 0; i < 4; i++)
         {
-            static float f = 0.0f;
-            static int counter = 0;
-
-            ImGui::Begin("Hello, world!");                          // Create a window called "Hello, world!" and append into it.
-
-            ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
-            ImGui::Checkbox("Demo Window", &show_demo_window);      // Edit bools storing our window open/close state
-            ImGui::Checkbox("Another Window", &show_another_window);
-
-            ImGui::SliderFloat("float", &f, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
-            ImGui::ColorEdit3("clear color", (float*)&clear_color); // Edit 3 floats representing a color
-
-            if (ImGui::Button("Button"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
-                counter++;
-            ImGui::SameLine();
-            ImGui::Text("counter = %d", counter);
-
-            ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
-            ImGui::End();
+            if (ImGui::Selectable(room_names[i], current_room == i))
+            {
+                current_room = i;
+                scroll_to_bottom = true;
+            }
         }
 
-        // 3. Show another simple window.
-        if (show_another_window)
+        ImGui::EndChild();
+
+        // separator line
+        ImGui::SameLine();
+
+        // chat content area
+        ImGui::BeginChild("RightPanel", ImVec2(0, avail.y), true);
+        // input area height
+        float input_height = ImGui::GetFrameHeightWithSpacing() * 2;
+
+        // input area history
+        ImGui::BeginChild("ChatHistory", ImVec2(0, avail.y - input_height), false);
+
+        for (const auto& msg : chat_history[current_room])
         {
-            ImGui::Begin("Another Window", &show_another_window);   // Pass a pointer to our bool variable (the window will have a closing button that will clear the bool when clicked)
-            ImGui::Text("Hello from another window!");
-            if (ImGui::Button("Close Me"))
-                show_another_window = false;
-            ImGui::End();
+            ImGui::TextWrapped("%s", msg.c_str());
         }
+
+        if (scroll_to_bottom)
+        {
+            ImGui::SetScrollHereY(1.0f);
+            scroll_to_bottom = false;
+        }
+
+        ImGui::EndChild();
+
+
+        // back to the end button overlay
+        ImVec2 history_pos = ImGui::GetItemRectMin();
+        ImVec2 history_size = ImGui::GetItemRectSize();
+
+        ImGui::SetCursorScreenPos(ImVec2(
+            history_pos.x + history_size.x - 130.0f,
+            history_pos.y + history_size.y - 40.0f
+        ));
+
+        ImGui::BeginChild(
+            "BackToBottomOverlay",
+            ImVec2(120, 30),
+            false,
+            ImGuiWindowFlags_NoScrollbar |
+            ImGuiWindowFlags_NoScrollWithMouse |
+            ImGuiWindowFlags_NoBackground
+        );
+
+        if (ImGui::Button("TO END"))
+        {
+            scroll_to_bottom = true;
+        }
+
+        ImGui::EndChild();
+
+        
+        ImGui::Separator();
+
+        // send message
+        bool send = false;
+
+        send |= ImGui::InputText(
+            "##chatinput",
+            chat_input,
+            IM_ARRAYSIZE(chat_input),
+            ImGuiInputTextFlags_EnterReturnsTrue |
+            ImGuiInputTextFlags_AutoSelectAll
+        );
+
+        if (focus_input_next_frame)
+        {
+            ImGui::SetKeyboardFocusHere(-1);
+            focus_input_next_frame = false;
+        }
+
+
+        ImGui::SameLine();
+
+        send |= ImGui::Button("Send");
+
+        if (send && chat_input[0] != '\0')
+        {
+            chat_history[current_room].push_back(
+                std::string("Me: ") + chat_input
+            );
+
+            chat_input[0] = '\0';
+
+            // to the end
+            ImGui::SetScrollY(ImGui::GetScrollMaxY());
+
+            scroll_to_bottom = true;
+
+            // cotinue focus on input box
+            focus_input_next_frame = true;
+        }
+
+
+        ImGui::EndChild();
+
+        ImGui::End();
 
         // Rendering
         ImGui::Render();
